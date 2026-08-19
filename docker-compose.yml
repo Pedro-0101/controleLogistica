@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: controle_logistica_db
+    environment:
+      POSTGRES_USER: logistica
+      POSTGRES_PASSWORD: logistica
+      POSTGRES_DB: controle_logistica
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistica -d controle_logistica"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
