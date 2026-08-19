@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from serial import SerialException
 from fastapi import (
     Depends,
     FastAPI,
@@ -27,12 +28,16 @@ from sqlalchemy.orm import Session, selectinload
 from .anpr.plate import normalizar_placa
 from .anpr.recognizer import get_recognizer
 from .balanca.ao_vivo import BalancaAoVivo
+from .balanca.portas import detectar, listar_portas
 from .config import settings
 from .db import get_db, init_db
 from . import models
 from .schemas import (
+    BalancaConectarIn,
+    BalancaDetectarOut,
     BalancaEstado,
     BalancaPesarOut,
+    BalancaPortaOut,
     EventoPlacaOut,
     MovimentacaoOut,
     PesagemIn,
@@ -229,6 +234,41 @@ async def ws_peso(websocket: WebSocket) -> None:
 @app.get("/balanca/estado", response_model=BalancaEstado)
 def balanca_estado() -> BalancaEstado:
     return app.state.balanca.estado()
+
+
+@app.get("/balanca/portas", response_model=list[BalancaPortaOut])
+def balanca_portas() -> list[BalancaPortaOut]:
+    return [
+        BalancaPortaOut(
+            porta=p.device,
+            descricao=p.description or None,
+            fabricante=p.manufacturer or None,
+            serial=p.serial_number or None,
+            hwid=p.hwid or None,
+        )
+        for p in listar_portas()
+    ]
+
+
+@app.post("/balanca/porta", response_model=BalancaEstado)
+def balanca_conectar(body: BalancaConectarIn) -> BalancaEstado:
+    balanca = app.state.balanca
+    if body.porta is None:
+        balanca.usar_simulador()
+    else:
+        try:
+            balanca.conectar_serial(body.porta, body.baudrate)
+        except SerialException as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Não foi possível abrir {body.porta}: {exc}"
+            ) from exc
+    return balanca.estado()
+
+
+@app.post("/balanca/detectar", response_model=BalancaDetectarOut)
+def balanca_detectar(body: BalancaConectarIn) -> BalancaDetectarOut:
+    porta = detectar(baudrate=body.baudrate, tempo=1.5)
+    return BalancaDetectarOut(porta=porta)
 
 
 def _decodificar_imagem(conteudo: bytes) -> np.ndarray:

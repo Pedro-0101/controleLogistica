@@ -73,6 +73,26 @@ class BalancaEstado(BaseModel):
     peso_atual: float
     peso_estavel: float | None
     desvio: float | None
+    fonte: str = "simulador"
+    porta: str | None = None
+    ultima_linha: str | None = None
+
+
+class BalancaPortaOut(BaseModel):
+    porta: str
+    descricao: str | None
+    fabricante: str | None
+    serial: str | None
+    hwid: str | None
+
+
+class BalancaConectarIn(BaseModel):
+    porta: str | None = None
+    baudrate: int = 9600
+
+
+class BalancaDetectarOut(BaseModel):
+    porta: str | None
 
 
 class BalancaPesarOut(BaseModel):
