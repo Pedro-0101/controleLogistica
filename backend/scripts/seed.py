@@ -1,4 +1,6 @@
-"""Cria dados iniciais (planta e pontos de coleta) no banco.
+"""Cria dados iniciais (planta, pontos e usuário admin) no banco.
+
+Requer o banco migrado (rode `alembic upgrade head` antes).
 
 Uso (a partir da pasta backend/):
     python -m scripts.seed
@@ -6,8 +8,10 @@ Uso (a partir da pasta backend/):
 
 from sqlalchemy import select
 
-from app.db import SessionLocal, init_db
 from app import models
+from app.auth.security import hash_senha
+from app.config import settings
+from app.db import SessionLocal
 
 PONTOS_PADRAO = [
     ("PORTARIA_ENTRADA", "portaria_entrada", "Portaria - Entrada"),
@@ -17,7 +21,6 @@ PONTOS_PADRAO = [
 
 
 def seed() -> None:
-    init_db()
     with SessionLocal() as db:
         planta = db.execute(
             select(models.Planta).where(models.Planta.codigo == "PLT001")
@@ -41,9 +44,24 @@ def seed() -> None:
                     )
                 )
 
+        admin = db.execute(
+            select(models.Usuario).where(models.Usuario.email == settings.admin_email)
+        ).scalar_one_or_none()
+        if admin is None:
+            db.add(
+                models.Usuario(
+                    nome=settings.admin_nome,
+                    email=settings.admin_email,
+                    senha_hash=hash_senha(settings.admin_password),
+                    role="admin",
+                    ativo=True,
+                )
+            )
+
         db.commit()
         print(f"Planta '{planta.codigo}' id={planta.id} pronta.")
         print("Pontos:", ", ".join(p[0] for p in PONTOS_PADRAO))
+        print(f"Admin '{settings.admin_email}' pronto.")
 
 
 if __name__ == "__main__":

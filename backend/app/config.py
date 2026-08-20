@@ -20,7 +20,13 @@ class Settings(BaseSettings):
     )
     anpr_lang: str = "en"
     imagens_dir: Path = PROJECT_DIR / "data" / "imagens"
-    static_dir: Path = BASE_DIR / "static"
+
+    secret_key: str = "dev-secret-change-me-0123456789abcdef"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_minutes: int = 10080
+    admin_email: str = "admin@example.com"
+    admin_password: str = "admin123"
+    admin_nome: str = "Administrador"
 
 
 settings = Settings()

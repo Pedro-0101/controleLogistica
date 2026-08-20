@@ -1,16 +1,27 @@
-"""Regras de negócio para registro de eventos de placa."""
+"""Regras de negócio para placas (resolução via corpo ou ANPR)."""
 
-from datetime import datetime, timezone
+from dataclasses import dataclass
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..anpr.plate import Placa
-from . import movimentacao_service
+from ..anpr.plate import normalizar_placa
+from ..anpr.recognizer import get_recognizer
+from .erros import PlacaNaoReconhecidaError
+
+
+@dataclass(frozen=True)
+class PlacaResolvida:
+    valor: str
+    formato: str | None
+    confianca: float | None
+    raw: str | None
 
 
 def obter_ou_criar_veiculo(db: Session, placa: str) -> models.Veiculo:
+    """Retorna o veículo da placa, criando-o se ainda não existir."""
     veiculo = db.execute(
         select(models.Veiculo).where(models.Veiculo.placa == placa)
     ).scalar_one_or_none()
@@ -21,34 +32,37 @@ def obter_ou_criar_veiculo(db: Session, placa: str) -> models.Veiculo:
     return veiculo
 
 
-def registrar_evento(
-    db: Session,
-    *,
-    placa: Placa,
-    confianca: float | None,
-    raw: str | None,
-    planta_id: int,
-    ponto_id: int,
-    imagem_path: str | None = None,
-    capturado_em: datetime | None = None,
-) -> models.EventoPlaca:
-    veiculo = obter_ou_criar_veiculo(db, placa.valor)
-    evento = models.EventoPlaca(
-        placa=placa.valor,
-        placa_raw=raw,
-        formato=placa.formato,
-        confianca=confianca,
-        planta_id=planta_id,
-        ponto_id=ponto_id,
-        veiculo_id=veiculo.id,
-        imagem_path=imagem_path,
-        capturado_em=capturado_em or datetime.now(timezone.utc),
+def resolver_placa(*, placa: str | None, imagem: np.ndarray | None) -> PlacaResolvida:
+    """Resolve a placa a partir do campo do corpo ou do OCR da imagem.
+
+    Args:
+        placa: Placa informada explicitamente no corpo (opcional).
+        imagem: Imagem BGR (numpy) usada pelo OCR quando `placa` não é informada.
+
+    Returns:
+        PlacaResolvida com o valor normalizado e metadados do ANPR.
+
+    Raises:
+        PlacaNaoReconhecidaError: Se a placa não puder ser determinada.
+    """
+    if placa:
+        normalizada = normalizar_placa(placa)
+        if normalizada is None:
+            raise PlacaNaoReconhecidaError
+        return PlacaResolvida(
+            valor=normalizada.valor,
+            formato=normalizada.formato,
+            confianca=None,
+            raw=placa,
+        )
+    if imagem is None:
+        raise PlacaNaoReconhecidaError
+    melhor = get_recognizer().reconhecer_melhor(imagem)
+    if melhor is None:
+        raise PlacaNaoReconhecidaError
+    return PlacaResolvida(
+        valor=melhor.placa.valor,
+        formato=melhor.placa.formato,
+        confianca=melhor.confianca,
+        raw=melhor.raw,
     )
-    db.add(evento)
-    db.commit()
-    db.refresh(evento)
-
-    # avança a máquina de estados (entrada/saída) automaticamente
-    movimentacao_service.processar_evento_placa(db, evento)
-
-    return evento

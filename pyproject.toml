@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "controle-logistica"
+version = "0.2.0"
+description = "API de operação de logística (portaria + balança)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.141",
+    "uvicorn>=0.52",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "pydantic-settings>=2.15",
+    "python-multipart>=0.0.32",
+    "paddleocr>=3.7",
+    "opencv-contrib-python>=4.10",
+    "numpy>=2.3",
+    "pyserial>=3.5",
+    "PyJWT>=2.8",
+    "bcrypt>=4.0",
+    "alembic>=1.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "httpx>=0.28",
+    "mypy>=1.10",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "RUF", "SIM", "ARG", "PTH", "ERA"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["S101", "ARG001"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "backend"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["cv2", "paddleocr"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+addopts = "-ra -q"

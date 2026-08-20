@@ -10,13 +10,31 @@ ANTIGA_RE = re.compile(r"^[A-Z]{3}\d{4}$")
 
 # Caracteres de dígito que o OCR costuma entregar onde deveria haver letra.
 DIGITO_PARA_LETRA = {
-    "0": "O", "1": "I", "2": "Z", "3": "E", "4": "A",
-    "5": "S", "6": "G", "7": "T", "8": "B", "9": "Q",
+    "0": "O",
+    "1": "I",
+    "2": "Z",
+    "3": "E",
+    "4": "A",
+    "5": "S",
+    "6": "G",
+    "7": "T",
+    "8": "B",
+    "9": "Q",
 }
 # Caracteres de letra que o OCR costuma entregar onde deveria haver dígito.
 LETRA_PARA_DIGITO = {
-    "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2",
-    "E": "3", "A": "4", "S": "5", "G": "6", "T": "7", "B": "8",
+    "O": "0",
+    "Q": "0",
+    "D": "0",
+    "I": "1",
+    "L": "1",
+    "Z": "2",
+    "E": "3",
+    "A": "4",
+    "S": "5",
+    "G": "6",
+    "T": "7",
+    "B": "8",
 }
 
 MERCOSUL_POS = "LLLNLNN"
@@ -29,12 +47,16 @@ class Placa:
     formato: str  # "mercosul" | "antiga"
 
     def formatar(self) -> str:
-        return self.valor if self.formato == "mercosul" else f"{self.valor[:3]}-{self.valor[3:]}"
+        return (
+            self.valor
+            if self.formato == "mercosul"
+            else f"{self.valor[:3]}-{self.valor[3:]}"
+        )
 
 
 def _ajustar(texto: str, padrao: str) -> str | None:
     saida: list[str] = []
-    for ch, tipo in zip(texto, padrao):
+    for ch, tipo in zip(texto, padrao, strict=True):
         if tipo == "L":
             if ch.isalpha():
                 saida.append(ch)
@@ -72,7 +94,10 @@ def _classificar(texto: str) -> Placa | None:
     for padrao in (MERCOSUL_POS, ANTIGA_POS):
         corrigido = _ajustar(texto, padrao)
         if corrigido:
-            return Placa(valor=corrigido, formato="mercosul" if padrao == MERCOSUL_POS else "antiga")
+            return Placa(
+                valor=corrigido,
+                formato="mercosul" if padrao == MERCOSUL_POS else "antiga",
+            )
     return None
 
 
