@@ -3,10 +3,14 @@
 API pura (FastAPI) para a fase de operação, consumida pelos frontends da
 **Portaria** e da **Balança**.
 
-- **Portaria** envia foto da frente do caminhão + `operacao` (`entrada` | `saida`) + `unidade`.
-- **Balança** envia foto da frente do caminhão + `peso` (em toneladas) + `unidade`.
+- **Portaria** envia `operacao` (`entrada` | `saida`) + `camera` (URL de snapshot) +
+  `unidade`. O backend captura o snapshot e reconhece a placa via ANPR.
+- **Balança** envia `peso` (em toneladas) + `tipo` (`tara` | `bruto`) + `camera` +
+  `unidade`. O backend também captura o snapshot.
 
-`unidade` é o **código** da planta (ex.: `PLT001`).
+`camera` é a **URL completa do snapshot** da câmera (o front decide qual câmera
+usar, então o sistema se adapta a qualquer quantidade de câmeras) e `unidade` é
+o **código** da planta (ex.: `SAO_JOAO`).
 
 ## Visão geral
 
@@ -55,14 +59,18 @@ Perfis: `admin`, `portaria`, `balanca`.
 
 ## Portaria
 
-`POST /portaria/eventos` — multipart:
+`POST /portaria/eventos` — formulário (`application/x-www-form-urlencoded`):
 
 | Campo | Tipo | Obrigatório | Descrição |
 |-------|------|-------------|-----------|
-| `foto` | file | sim | Foto da frente do caminhão |
 | `operacao` | str | sim | `entrada` ou `saida` |
-| `unidade` | str | sim | Código da unidade/planta (ex.: `PLT001`) |
+| `camera` | str | sim | URL completa do snapshot (ex.: `http://IP/ISAPI/Streaming/channels/101/picture`) |
+| `unidade` | str | sim | Código da unidade/planta (ex.: `SAO_JOAO`) |
 | `placa` | str | não | Placa explícita (ignora o OCR) |
+
+A `operacao` define se a passagem abre (`entrada`) ou fecha (`saida`) a visita. O
+backend captura o snapshot da URL `camera` e roda o ANPR nela. Falha de captura →
+`502`.
 
 Resposta `201`:
 
@@ -82,13 +90,14 @@ Resposta `201`:
 
 ## Balança
 
-`POST /pesagens` — multipart:
+`POST /pesagens` — formulário (`application/x-www-form-urlencoded`):
 
 | Campo | Tipo | Obrigatório | Descrição |
 |-------|------|-------------|-----------|
-| `foto` | file | sim | Foto da frente do caminhão |
 | `peso` | float | sim | Peso em **toneladas** (ex.: `99.99`) |
-| `unidade` | str | sim | Código da unidade/planta (ex.: `PLT001`) |
+| `tipo` | str | sim | `tara` (vazio) ou `bruto` (cheio) |
+| `camera` | str | sim | URL completa do snapshot |
+| `unidade` | str | sim | Código da unidade/planta (ex.: `SAO_JOAO`) |
 | `placa` | str | não | Placa explícita (ignora o OCR) |
 
 Resposta `201`:
@@ -100,6 +109,7 @@ Resposta `201`:
   "placa": "ABC1D23",
   "peso": 99.99,
   "ordem": 1,
+  "tipo": "tara",
   "peso_liquido": null,
   "tipo_carregamento": null,
   "capturado_em": "2026-08-20T14:10:00Z"
@@ -111,28 +121,49 @@ Resposta `201`:
 
 ## Ciclo da visita
 
-`visita_id` (UUID) agrupa: **1 entrada → N pesagens → 1 saída**.
+`visita_id` (UUID) agrupa: **1 entrada → pesagens → 1 saída**.
 
 - A **entrada** abre (ou reutiliza) uma visita.
-- Cada **pesagem** é anexada à visita aberta (`ordem` = 1, 2, 3, ...).
+- Cada **pesagem** é anexada à visita aberta, com um `tipo` (`tara` ou `bruto`).
 - A **saída** fecha a visita e calcula, na última pesagem:
-  - `peso_entrada` (1ª pesagem) e `peso_saida` (última pesagem);
-  - `peso_liquido = |peso_saida - peso_entrada|`;
+  - `peso_entrada` = último peso de `tara` (caminhão vazio);
+  - `peso_saida` = último peso de `bruto` (caminhão cheio);
+  - `peso_liquido = bruto - tara`;
   - `tipo_carregamento`:
-    - 0 pesagens → `sem_pesagem` (visita fechada sem registro de peso);
-    - 1 pesagem → `pesagem_parcial`;
-    - 2+ pesagens → `carregamento` (peso aumentou) ou `descarregamento` (diminuiu).
+    - sem pesagens → `sem_pesagem`;
+    - só tara ou só bruto → `pesagem_parcial`;
+    - `carregamento` (bruto > tara) ou `descarregamento` (bruto < tara).
 
 ## Códigos de erro
 
 | Código | Situação |
 |--------|----------|
-| `400` | Imagem inválida, operação inválida ou peso <= 0 |
+| `400` | Imagem inválida, operação/tipo inválido ou peso <= 0 |
 | `401` | Token ausente/inválido/expirado |
 | `403` | Perfil sem permissão |
-| `404` | Recurso, unidade ou ponto de coleta não encontrado |
+| `404` | Unidade ou ponto de coleta não encontrado |
 | `409` | Conflito (registro duplicado, dependência, sem visita aberta) |
-| `422` | Placa inválida ou não reconhecida (e não enviada no corpo) |
+| `422` | Placa inválida ou não reconhecida (e não enviada), ou campo obrigatório ausente |
+| `502` | Falha ao capturar o snapshot da câmera (rede/autenticação) |
+
+## Câmeras (IP Intelbras)
+
+A imagem não é enviada pelo frontend — ele envia apenas a **URL de snapshot** da
+câmera e o backend faz a captura. Como cada câmera pode ter firmware de OEM
+diferente, a URL completa é flexível:
+
+```
+# Hikvision/ISAPI (linha atual)
+http://IP/ISAPI/Streaming/channels/101/picture
+
+# Dahua
+http://IP/cgi-bin/snapshot.cgi
+```
+
+- As credenciais das câmeras são globais, via variáveis de ambiente (`DVR_USER`,
+  `DVR_PASSWORD`, `DVR_AUTH=digest|basic`, `DVR_TIMEOUT`).
+- Para descobrir/validar a URL do seu equipamento, use
+  `python -m scripts.dvr_probe --host <IP> --password <senha>`.
 
 ## Unidade de peso
 

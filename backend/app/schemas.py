@@ -81,6 +81,7 @@ class PontoOut(BaseModel):
     id: int
     planta_id: int
     codigo: str
+    nome: str
     tipo: str
     descricao: str | None
     camera_url: str | None
@@ -90,6 +91,7 @@ class PontoOut(BaseModel):
 class PontoIn(BaseModel):
     planta_id: int
     codigo: str
+    nome: str
     tipo: str
     descricao: str | None = None
     camera_url: str | None = None
@@ -118,6 +120,7 @@ class PesagemOut(BaseModel):
     placa: str
     peso: float
     ordem: int
+    tipo: str | None
     peso_entrada: float | None
     peso_saida: float | None
     peso_liquido: float | None

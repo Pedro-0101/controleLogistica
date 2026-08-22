@@ -28,5 +28,12 @@ class Settings(BaseSettings):
     admin_password: str = "admin123"
     admin_nome: str = "Administrador"
 
+    # DVR Intelbras (MHDX / firmware Dahua). As credenciais são globais; a URL
+    # de snapshot de cada câmera fica em Ponto.camera_url.
+    dvr_user: str = "admin"
+    dvr_password: str = ""
+    dvr_auth: str = "digest"  # digest | basic
+    dvr_timeout: float = 5.0
+
 
 settings = Settings()

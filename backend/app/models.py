@@ -32,6 +32,7 @@ class Ponto(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     planta_id: Mapped[int] = mapped_column(ForeignKey("plantas.id"), index=True)
     codigo: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    nome: Mapped[str] = mapped_column(String(120), default="", server_default="")
     tipo: Mapped[str] = mapped_column(
         String(30)
     )  # portaria_entrada | portaria_saida | balanca
@@ -118,6 +119,7 @@ class Pesagem(Base):
     desvio: Mapped[float | None] = mapped_column(Float, nullable=True)
     amostras: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ordem: Mapped[int] = mapped_column(Integer)  # 1 = entrada, 2 = saida, ...
+    tipo: Mapped[str | None] = mapped_column(String(10), nullable=True)  # tara | bruto
     peso_entrada: Mapped[float | None] = mapped_column(Float, nullable=True)
     peso_saida: Mapped[float | None] = mapped_column(Float, nullable=True)
     peso_liquido: Mapped[float | None] = mapped_column(Float, nullable=True)

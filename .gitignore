@@ -6,3 +6,4 @@ data/
 photos/
 .idea/
 .vscode/
+*.egg-info/

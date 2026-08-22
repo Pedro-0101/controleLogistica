@@ -14,23 +14,23 @@ from app.config import settings
 from app.db import SessionLocal
 
 PONTOS_PADRAO = [
-    ("PORTARIA_ENTRADA", "portaria_entrada", "Portaria - Entrada"),
-    ("PORTARIA_SAIDA", "portaria_saida", "Portaria - Saída"),
-    ("BALANCA", "balanca", "Balança rodoviária"),
+    ("PORTARIA_ENTRADA", "Entrada Portaria", "portaria_entrada", "Portaria - Entrada"),
+    ("PORTARIA_SAIDA", "Saída Portaria", "portaria_saida", "Portaria - Saída"),
+    ("BALANCA", "Balança", "balanca", "Balança rodoviária"),
 ]
 
 
 def seed() -> None:
     with SessionLocal() as db:
         planta = db.execute(
-            select(models.Planta).where(models.Planta.codigo == "PLT001")
+            select(models.Planta).where(models.Planta.codigo == "SAO_JOAO")
         ).scalar_one_or_none()
         if planta is None:
-            planta = models.Planta(codigo="PLT001", nome="Planta Principal")
+            planta = models.Planta(codigo="SAO_JOAO", nome="São João")
             db.add(planta)
             db.flush()
 
-        for codigo, tipo, descricao in PONTOS_PADRAO:
+        for codigo, nome, tipo, descricao in PONTOS_PADRAO:
             ponto = db.execute(
                 select(models.Ponto).where(models.Ponto.codigo == codigo)
             ).scalar_one_or_none()
@@ -39,6 +39,7 @@ def seed() -> None:
                     models.Ponto(
                         planta_id=planta.id,
                         codigo=codigo,
+                        nome=nome,
                         tipo=tipo,
                         descricao=descricao,
                     )

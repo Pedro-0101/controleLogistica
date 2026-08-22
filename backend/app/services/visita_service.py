@@ -35,7 +35,12 @@ def obter_visita_aberta(
 
 
 def _finalizar_carregamento(db: Session, visita_id: uuid.UUID) -> None:
-    """Preenche peso_entrada/saida/liquido e tipo na última pesagem da visita."""
+    """Preenche pesos (tara/bruto) e tipo na última pesagem da visita.
+
+    O peso líquido é ``bruto - tara``. O sistema não sabe, sozinho, se uma
+    pesagem é de caminhão vazio ou cheio — essa informação vem do front no campo
+    ``tipo`` de cada pesagem.
+    """
     pesagens = list(
         db.scalars(
             select(models.Pesagem)
@@ -45,19 +50,22 @@ def _finalizar_carregamento(db: Session, visita_id: uuid.UUID) -> None:
     )
     if not pesagens:
         return
-    primeira = pesagens[0]
     ultima = pesagens[-1]
-    ultima.peso_entrada = primeira.peso
-    if len(pesagens) >= 2:
-        ultima.peso_saida = ultima.peso
-        ultima.peso_liquido = round(abs(ultima.peso - primeira.peso), 1)
-        ultima.tipo_carregamento = (
-            "carregamento" if ultima.peso > primeira.peso else "descarregamento"
-        )
-    else:
-        ultima.peso_saida = None
+    taras = [p for p in pesagens if p.tipo == "tara"]
+    brutos = [p for p in pesagens if p.tipo == "bruto"]
+    tara = taras[-1].peso if taras else None
+    bruto = brutos[-1].peso if brutos else None
+    ultima.peso_entrada = tara
+    ultima.peso_saida = bruto
+    if tara is not None and bruto is not None:
+        ultima.peso_liquido = round(bruto - tara, 1)
+        ultima.tipo_carregamento = "carregamento" if bruto > tara else "descarregamento"
+    elif tara is not None or bruto is not None:
         ultima.peso_liquido = None
         ultima.tipo_carregamento = "pesagem_parcial"
+    else:
+        ultima.peso_liquido = None
+        ultima.tipo_carregamento = "sem_pesagem"
 
 
 def registrar_entrada(

@@ -13,17 +13,17 @@ API de operação de logística para os frontends da **Portaria** e da **Balanç
 
 ## Fluxo
 
-1. A **portaria** envia a foto frontal do caminhão com a operação de
-   `entrada` ou `saida` e a **unidade** (`POST /portaria/eventos`).
-2. A **balança** envia a foto frontal com o peso em **toneladas** e a
-   **unidade** (`POST /pesagens`).
-3. A placa é reconhecida via ANPR (PaddleOCR) ou pode ser enviada
-   explicitamente no campo `placa`, ignorando o OCR.
+1. A **portaria** envia a `operacao` (`entrada` ou `saida`), a **URL de
+   snapshot da câmera** e a **unidade** (`POST /portaria/eventos`).
+2. A **balança** envia o peso em **toneladas**, o `tipo` (`tara` = vazio ou
+   `bruto` = cheio), a **URL de snapshot** e a **unidade** (`POST /pesagens`).
+3. O backend captura o snapshot na URL informada e reconhece a placa via ANPR
+   (PaddleOCR), ou usa a placa enviada explicitamente no campo `placa`.
 
 ## Visita
 
-O `visita_id` (UUID) agrupa **1 entrada → N pesagens → 1 saída**. Ao fechar a
-visita, calcula-se o peso líquido e o tipo de carregamento.
+O `visita_id` (UUID) agrupa **1 entrada → pesagens → 1 saída**. Ao fechar a
+visita, calcula-se `peso_liquido = bruto - tara` e o tipo de carregamento.
 
 ## Autenticação
 

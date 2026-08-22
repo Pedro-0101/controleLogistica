@@ -74,6 +74,16 @@ def _imagens_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "imagens_dir", tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _camera_fake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Substitui a captura de snapshot por um JPEG em memória (sem rede)."""
+
+    async def _snapshot(_url: str | None) -> bytes:
+        return imagem_jpeg()
+
+    monkeypatch.setattr("app.services.camera.capturar_snapshot", _snapshot)
+
+
 def _criar_usuario(
     session_factory: sessionmaker[Session],
     email: str,
@@ -129,11 +139,18 @@ def estrutura(session_factory: sessionmaker[Session]) -> int:
         db.add(planta)
         db.flush()
         pontos = [
-            ("PORTARIA_ENTRADA", "portaria_entrada"),
-            ("PORTARIA_SAIDA", "portaria_saida"),
-            ("BALANCA", "balanca"),
+            ("PORTARIA_ENTRADA", "Entrada Portaria", "portaria_entrada"),
+            ("PORTARIA_SAIDA", "Saída Portaria", "portaria_saida"),
+            ("BALANCA", "Balança", "balanca"),
         ]
-        for codigo, tipo in pontos:
-            db.add(models.Ponto(planta_id=planta.id, codigo=codigo, tipo=tipo))
+        for codigo, nome, tipo in pontos:
+            db.add(
+                models.Ponto(
+                    planta_id=planta.id,
+                    codigo=codigo,
+                    nome=nome,
+                    tipo=tipo,
+                )
+            )
         db.commit()
         return planta.id

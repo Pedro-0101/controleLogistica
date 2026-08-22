@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,13 @@ from .. import models
 from ..auth.deps import require_roles
 from ..db import get_db
 from ..schemas import CarregamentoOut, PesagemOut
-from ..services.erros import PlacaNaoReconhecidaError, VisitaAbertaNaoEncontradaError
+from ..services import camera as camera_service
+from ..services.erros import (
+    CameraNaoConfiguradaError,
+    CameraSnapshotError,
+    PlacaNaoReconhecidaError,
+    VisitaAbertaNaoEncontradaError,
+)
 from ..services.imagem import decodificar, salvar
 from ..services.pesagem_service import registrar_pesagem
 from ..services.plate_service import resolver_placa
@@ -44,17 +50,25 @@ def _ponto_balanca(db: Session, planta_id: int) -> models.Ponto:
     status_code=201,
     summary="Registra a pesagem de um veículo",
     responses={
-        400: {"description": "Imagem inválida ou peso <= 0"},
+        400: {"description": "Imagem inválida, peso <= 0 ou tipo inválido"},
         404: {"description": "Unidade ou ponto de coleta não encontrado"},
         409: {"description": "Nenhuma visita aberta para a placa"},
         422: {"description": "Placa inválida ou não reconhecida (e não enviada)"},
+        502: {"description": "Falha ao capturar imagem da câmera"},
     },
 )
 async def criar_pesagem(
-    foto: UploadFile = File(..., description="Foto frontal do caminhão"),
     peso: float = Form(..., description="Peso em toneladas", examples=[99.99]),
+    tipo: str = Form(
+        ..., description="Tipo da pesagem: 'tara' (vazio) ou 'bruto' (cheio)"
+    ),
+    camera: str = Form(
+        ...,
+        description="URL de snapshot da câmera",
+        examples=["http://192.168.11.241/ISAPI/Streaming/channels/101/picture"],
+    ),
     unidade: str = Form(
-        ..., description="Código da unidade (planta)", examples=["PLT001"]
+        ..., description="Código da unidade (planta)", examples=["SAO_JOAO"]
     ),
     placa: str | None = Form(
         None,
@@ -66,12 +80,24 @@ async def criar_pesagem(
 ) -> models.Pesagem:
     """Registra a pesagem de um veículo na balança da unidade informada.
 
-    O peso é armazenado em **toneladas**. A pesagem exige uma visita aberta na
-    portaria (entrada registrada e ainda não saída).
+    O front envia a URL de snapshot da câmera e o `tipo` da pesagem (``tara``
+    para caminhão vazio ou ``bruto`` para cheio). O peso líquido é calculado
+    como ``bruto - tara`` no fechamento da visita.
     """
     if peso <= 0:
         raise HTTPException(status_code=400, detail="Peso deve ser maior que zero")
-    conteudo = await foto.read()
+    if tipo not in ("tara", "bruto"):
+        raise HTTPException(status_code=400, detail="Tipo deve ser 'tara' ou 'bruto'")
+    planta = _resolver_unidade(db, unidade)
+    ponto = _ponto_balanca(db, planta.id)
+    try:
+        conteudo = await camera_service.capturar_snapshot(camera)
+    except CameraNaoConfiguradaError as exc:
+        raise HTTPException(status_code=400, detail="Câmera não informada") from exc
+    except CameraSnapshotError as exc:
+        raise HTTPException(
+            status_code=502, detail="Falha ao capturar imagem da câmera"
+        ) from exc
     try:
         imagem = decodificar(conteudo)
     except ValueError as exc:
@@ -80,14 +106,13 @@ async def criar_pesagem(
         resolvida = resolver_placa(placa=placa, imagem=imagem)
     except PlacaNaoReconhecidaError as exc:
         raise HTTPException(status_code=422, detail="Placa não reconhecida") from exc
-    planta = _resolver_unidade(db, unidade)
-    ponto = _ponto_balanca(db, planta.id)
     foto_path = salvar(conteudo)
     try:
         return registrar_pesagem(
             db,
             resolvida=resolvida,
             peso=peso,
+            tipo=tipo,
             planta_id=planta.id,
             ponto_id=ponto.id,
             foto_path=foto_path,

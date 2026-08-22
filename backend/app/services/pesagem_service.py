@@ -25,11 +25,15 @@ def registrar_pesagem(
     *,
     resolvida: PlacaResolvida,
     peso: float,
+    tipo: str,
     planta_id: int,
     ponto_id: int,
     foto_path: str | None,
 ) -> models.Pesagem:
     """Registra uma pesagem (em toneladas) vinculada à visita aberta do veículo.
+
+    `tipo` indica se a pesagem é de ``tara`` (caminhão vazio) ou ``bruto``
+    (caminhão cheio) — o sistema não consegue inferir isso sozinho.
 
     Raises:
         VisitaAbertaNaoEncontradaError: Se não houver visita aberta para a placa.
@@ -49,6 +53,7 @@ def registrar_pesagem(
         desvio=None,
         amostras=None,
         ordem=_proxima_ordem(db, aberta.visita_id),
+        tipo=tipo,
     )
     db.add(pesagem)
     db.commit()

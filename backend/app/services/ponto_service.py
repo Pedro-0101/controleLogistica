@@ -24,3 +24,10 @@ def obter_ponto(db: Session, planta_id: int, tipo: str) -> models.Ponto | None:
         .scalars()
         .first()
     )
+
+
+def obter_ponto_por_codigo(db: Session, codigo: str) -> models.Ponto | None:
+    """Retorna o ponto de coleta pelo código (ou None)."""
+    return db.execute(
+        select(models.Ponto).where(models.Ponto.codigo == codigo)
+    ).scalar_one_or_none()

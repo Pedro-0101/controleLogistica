@@ -2,9 +2,10 @@
 
 API de operação de logística (portaria + balança) — FastAPI + PostgreSQL.
 
-A API recebe da **portaria** a foto frontal do caminhão com a operação de
-entrada/saída e da **balança** a foto frontal com o peso em toneladas. A placa é
-reconhecida via ANPR (PaddleOCR) ou pode ser enviada explicitamente no corpo.
+A API recebe da **portaria** a `operacao` (entrada/saída) e da **balança** o
+`peso` (toneladas) com `tipo` (`tara`/`bruto`). O front envia a **URL de snapshot
+da câmera**, que o backend captura e usa para reconhecer a placa via ANPR
+(PaddleOCR), ou usa a placa enviada explicitamente no corpo.
 
 ## Pré-requisitos
 
@@ -49,6 +50,30 @@ Documentação interativa: http://localhost:8000/docs
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Validade do access token | `30` |
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | Validade do refresh token | `10080` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NOME` | Usuário admin criado pelo seed | — |
+| `DVR_USER` / `DVR_PASSWORD` | Credenciais das câmeras IP Intelbras (Digest) | `admin` / vazio |
+| `DVR_AUTH` | Tipo de autenticação das câmeras (`digest` ou `basic`) | `digest` |
+| `DVR_TIMEOUT` | Timeout (segundos) para capturar o snapshot | `5.0` |
+
+## Câmeras (IP Intelbras)
+
+O front envia a **URL completa do snapshot** da câmera (o usuário gerencia as
+câmeras, então o sistema funciona com qualquer quantidade). Exemplos:
+
+```
+# Hikvision/ISAPI
+http://IP/ISAPI/Streaming/channels/101/picture
+
+# Dahua
+http://IP/cgi-bin/snapshot.cgi
+```
+
+As câmeras usam autenticação **Digest** (credenciais globais em `DVR_USER`/
+`DVR_PASSWORD`). Para descobrir/validar a URL do seu equipamento:
+
+```bash
+cd backend
+uv run python -m scripts.dvr_probe --host 192.168.11.241 --password Cameraip1
+```
 
 ## Autenticação
 
@@ -58,8 +83,8 @@ OAuth2 password flow. Obtenha o token em `POST /auth/login` (form-urlencoded
 
 ## Principais endpoints
 
-- `POST /portaria/eventos` — foto + `operacao` (`entrada`|`saida`) + `unidade` + `placa` (opcional).
-- `POST /pesagens` — foto + `peso` (toneladas) + `unidade` + `placa` (opcional).
+- `POST /portaria/eventos` — `operacao` (`entrada`|`saida`) + `camera` (URL) + `unidade` + `placa` (opcional).
+- `POST /pesagens` — `peso` (toneladas) + `tipo` (`tara`|`bruto`) + `camera` (URL) + `unidade` + `placa` (opcional).
 - CRUD: `/plantas`, `/veiculos`, `/pontos`, `/usuarios`.
 
 Veja [docs/API.md](docs/API.md) para o contrato completo.

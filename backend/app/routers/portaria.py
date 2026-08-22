@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,12 @@ from .. import models
 from ..auth.deps import require_roles
 from ..db import get_db
 from ..schemas import PortariaEventoOut
-from ..services.erros import PlacaNaoReconhecidaError
+from ..services import camera
+from ..services.erros import (
+    CameraNaoConfiguradaError,
+    CameraSnapshotError,
+    PlacaNaoReconhecidaError,
+)
 from ..services.imagem import decodificar, salvar
 from ..services.plate_service import resolver_placa
 from ..services.ponto_service import obter_planta_por_codigo, obter_ponto
@@ -40,14 +45,24 @@ def _ponto_para_operacao(db: Session, planta_id: int, operacao: str) -> models.P
     return ponto
 
 
-def _processar(
+async def _processar(
     db: Session,
     *,
-    conteudo: bytes,
     operacao: str,
+    camera_url: str,
     unidade: str,
     placa: str | None,
 ) -> models.PortariaMovimentacao:
+    planta = _resolver_unidade(db, unidade)
+    ponto = _ponto_para_operacao(db, planta.id, operacao)
+    try:
+        conteudo = await camera.capturar_snapshot(camera_url)
+    except CameraNaoConfiguradaError as exc:
+        raise HTTPException(status_code=400, detail="Câmera não informada") from exc
+    except CameraSnapshotError as exc:
+        raise HTTPException(
+            status_code=502, detail="Falha ao capturar imagem da câmera"
+        ) from exc
     try:
         imagem = decodificar(conteudo)
     except ValueError as exc:
@@ -56,8 +71,6 @@ def _processar(
         resolvida = resolver_placa(placa=placa, imagem=imagem)
     except PlacaNaoReconhecidaError as exc:
         raise HTTPException(status_code=422, detail="Placa não reconhecida") from exc
-    planta = _resolver_unidade(db, unidade)
-    ponto = _ponto_para_operacao(db, planta.id, operacao)
     foto_path = salvar(conteudo)
     if operacao == "entrada":
         return registrar_entrada(
@@ -85,15 +98,20 @@ def _processar(
         400: {"description": "Imagem inválida ou operação inválida"},
         404: {"description": "Unidade ou ponto de coleta não encontrado"},
         422: {"description": "Placa inválida ou não reconhecida (e não enviada)"},
+        502: {"description": "Falha ao capturar imagem da câmera"},
     },
 )
 async def registrar_evento(
-    foto: UploadFile = File(..., description="Foto frontal do caminhão"),
     operacao: str = Form(
         ..., description="Operação: 'entrada' ou 'saida'", examples=["entrada"]
     ),
+    camera: str = Form(
+        ...,
+        description="URL de snapshot da câmera",
+        examples=["http://192.168.11.241/ISAPI/Streaming/channels/101/picture"],
+    ),
     unidade: str = Form(
-        ..., description="Código da unidade (planta)", examples=["PLT001"]
+        ..., description="Código da unidade (planta)", examples=["SAO_JOAO"]
     ),
     placa: str | None = Form(
         None,
@@ -105,15 +123,13 @@ async def registrar_evento(
 ) -> models.PortariaMovimentacao:
     """Registra a passagem de um veículo na portaria.
 
-    A placa é reconhecida via ANPR na foto, mas pode ser enviada explicitamente
-    no campo `placa`, caso em que o OCR é ignorado. A operação abre (`entrada`)
-    ou fecha (`saida`) a visita do veículo na unidade informada.
+    O front envia a URL de snapshot da câmera, que o backend captura e usa no
+    ANPR. A operação (`entrada`/`saida`) abre ou fecha a visita do veículo.
     """
     if operacao not in ("entrada", "saida"):
         raise HTTPException(status_code=400, detail="Operação inválida")
-    conteudo = await foto.read()
-    return _processar(
-        db, conteudo=conteudo, operacao=operacao, unidade=unidade, placa=placa
+    return await _processar(
+        db, operacao=operacao, camera_url=camera, unidade=unidade, placa=placa
     )
 
 
