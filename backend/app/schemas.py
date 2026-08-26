@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TokenOut(BaseModel):
@@ -139,3 +139,44 @@ class CarregamentoOut(BaseModel):
     peso_liquido: float | None
     tipo_carregamento: str
     capturado_em: datetime
+
+
+class PlacaCameraIn(BaseModel):
+    host: str = Field(
+        ..., description="IP da câmera", examples=["192.168.11.241"]
+    )
+    port: int = Field(80, description="Porta HTTP da câmera", examples=[80])
+    user: str = Field(
+        ..., description="Usuário da câmera", examples=["admin"]
+    )
+    password: str = Field(..., description="Senha da câmera")
+    auth: str = Field(
+        "digest",
+        description="Tipo de autenticação: 'digest' ou 'basic'",
+        examples=["digest"],
+    )
+    camera_url: str | None = Field(
+        None,
+        description=(
+            "URL completa do snapshot (opcional). "
+            "Se omitida, o sistema tenta descobrir automaticamente."
+        ),
+        examples=["http://192.168.11.241/ISAPI/Streaming/channels/101/picture"],
+    )
+
+
+class PlacaCameraOut(BaseModel):
+    placa: str = Field(..., description="Placa normalizada (ex: ABC1D23)")
+    formato: str = Field(
+        ..., description="Formato da placa: 'mercosul' ou 'antiga'"
+    )
+    confianca: float = Field(
+        ..., description="Score de confiança do OCR (0-1)"
+    )
+    raw: str = Field(..., description="Texto bruto capturado pelo OCR")
+    camera_url_encontrada: str | None = Field(
+        None, description="URL de snapshot que retornou imagem válida"
+    )
+    foto_path: str | None = Field(
+        None, description="Caminho da imagem salva em disco"
+    )

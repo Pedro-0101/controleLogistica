@@ -1,12 +1,21 @@
 """API FastAPI do controle de logística (portaria + balança)."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from .config import settings
-from .routers import auth, pesagem, plantas, pontos, portaria, usuarios, veiculos
+from .routers import (
+    auth,
+    camera,
+    pesagem,
+    plantas,
+    pontos,
+    portaria,
+    usuarios,
+    veiculos,
+)
 
 DESCRICAO = """
 API de operação de logística para os frontends da **Portaria** e da **Balança**.
@@ -49,11 +58,15 @@ TAGS_METADATA = [
     },
     {"name": "usuarios", "description": "CRUD de usuários e perfis."},
     {"name": "infra", "description": "Health check."},
+    {
+        "name": "camera",
+        "description": "Reconhecimento de placa via câmera IP com credenciais customizadas.",
+    },
 ]
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     settings.imagens_dir.mkdir(parents=True, exist_ok=True)
     yield
 
@@ -82,6 +95,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(camera.router)
 app.include_router(portaria.router)
 app.include_router(pesagem.router)
 app.include_router(plantas.router)

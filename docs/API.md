@@ -17,6 +17,7 @@ o **código** da planta (ex.: `SAO_JOAO`).
 | Recurso | Rotas | Perfis |
 |---------|-------|--------|
 | Autenticação | `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me` | pública / autenticada |
+| Câmera (ANPR) | `POST /camera/reconhecer-placa` | pública |
 | Portaria | `POST /portaria/eventos`, `GET /portaria/eventos`, `GET /portaria/abertas` | `portaria`, `admin` |
 | Balança | `POST /pesagens`, `GET /pesagens`, `GET /pesagens/carregamentos` | `balanca`, `admin` |
 | Unidades | `/plantas` (CRUD) | GET: autenticado; escrita: `admin` |
@@ -56,6 +57,136 @@ curl http://localhost:8000/auth/me -H "Authorization: Bearer <access_token>"
 Para renovar sem novo login, use `POST /auth/refresh` com `{"refresh_token": "..."}`.
 
 Perfis: `admin`, `portaria`, `balanca`.
+
+## Câmera — Reconhecimento de Placa (ANPR)
+
+`POST /camera/reconhecer-placa` — JSON (`application/json`):
+
+Este endpoint recebe as credenciais da câmera IP diretamente no request,
+captura um snapshot, roda o ANPR (PaddleOCR) e retorna a placa do veículo.
+**Não requer autenticação.**
+
+### Request body
+
+| Campo | Tipo | Obrigatório | Default | Descrição |
+|-------|------|-------------|---------|-----------|
+| `host` | str | sim | — | IP da câmera (ex.: `192.168.11.241`) |
+| `port` | int | não | `80` | Porta HTTP da câmera |
+| `user` | str | sim | — | Usuário da câmera (ex.: `admin`) |
+| `password` | str | sim | — | Senha da câmera |
+| `auth` | str | não | `"digest"` | Tipo de autenticação: `"digest"` ou `"basic"` |
+| `camera_url` | str | não | `null` | URL completa do snapshot. Se omitida, o sistema tenta descobrir automaticamente entre 13 padrões comuns (Intelbras/Dahua/Hikvision) |
+
+**Exemplo com URL explícita:**
+
+```json
+{
+  "host": "192.168.11.241",
+  "port": 80,
+  "user": "admin",
+  "password": "minha_senha",
+  "auth": "digest",
+  "camera_url": "http://192.168.11.241/ISAPI/Streaming/channels/101/picture"
+}
+```
+
+**Exemplo com probe automático** (sem `camera_url`):
+
+```json
+{
+  "host": "192.168.11.241",
+  "port": 80,
+  "user": "admin",
+  "password": "minha_senha",
+  "auth": "digest"
+}
+```
+
+O sistema testa os seguintes endpoints automaticamente:
+
+```
+/cgi-bin/snapshot.cgi
+/cgi-bin/snapshot.cgi?channel=1
+/cgi-bin/snapshot.cgi?channel=0
+/webcapture.jpg?command=snap&channel=1
+/tmpfs/auto.jpg
+/snapshot.jpg
+/jpg/image.jpg
+/onvif/snapshot
+/cgi-bin/images_cgi?channel=0&subtype=0
+/cgi-bin/currentpic.cgi
+/Streaming/channels/1/picture
+/ISAPI/Streaming/channels/101/picture
+/cap.jpg
+```
+
+Cada endpoint é testado com Digest e Basic auth. O primeiro que retornar
+HTTP 200 com conteúdo é utilizado.
+
+### Response `200`
+
+```json
+{
+  "placa": "ABC1D23",
+  "formato": "mercosul",
+  "confianca": 0.9876,
+  "raw": "ABCI1D23",
+  "camera_url_encontrada": "http://192.168.11.241/ISAPI/Streaming/channels/101/picture",
+  "foto_path": "C:\\projetos\\controleLogistica\\data\\imagens\\20260826T153000123456.jpg"
+}
+```
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `placa` | str | Placa normalizada (Mercosul: `ABC1D23`, Antiga: `ABC1234`) |
+| `formato` | str | `"mercosul"` ou `"antiga"` |
+| `confianca` | float | Score de confiança do OCR (0 a 1) |
+| `raw` | str | Texto bruto capturado pelo OCR antes da normalização |
+| `camera_url_encontrada` | str \| null | URL que retornou imagem válida (preenchido quando probe automático foi usado) |
+| `foto_path` | str \| null | Caminho absoluto da imagem salva em disco |
+
+### Responses de erro
+
+| Código | Situação |
+|--------|----------|
+| `400` | Credenciais inválidas ou `camera_url` malformada |
+| `422` | Placa não reconhecida na imagem capturada |
+| `502` | Falha ao conectar ou capturar imagem da câmera (IP inacessível, timeout, autenticação recusada, ou nenhum endpoint de snapshot respondeu) |
+
+### Exemplo com curl
+
+```bash
+# Com URL explícita
+curl -X POST http://localhost:8000/camera/reconhecer-placa \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host": "192.168.11.241",
+    "user": "admin",
+    "password": "minha_senha",
+    "auth": "digest",
+    "camera_url": "http://192.168.11.241/ISAPI/Streaming/channels/101/picture"
+  }'
+
+# Com probe automático
+curl -X POST http://localhost:8000/camera/reconhecer-placa \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host": "192.168.11.241",
+    "user": "admin",
+    "password": "minha_senha"
+  }'
+```
+
+### Notas para o front
+
+- O endpoint é **público** (não requer token de autenticação).
+- Se `camera_url` for omitido, o probe automático pode levar alguns segundos
+  (testa 13 endpoints × 2 modos de auth).
+- O campo `confianca` indica a qualidade do reconheceimento. Valores acima de
+  `0.9` são considerados confiáveis.
+- A imagem capturada é salva em disco e o caminho é retornado em `foto_path`.
+- O front pode usar `camera_url_encontrada` para cache futuro (evitar probe
+  repetido para a mesma câmera).
 
 ## Portaria
 
@@ -138,7 +269,7 @@ Resposta `201`:
 
 | Código | Situação |
 |--------|----------|
-| `400` | Imagem inválida, operação/tipo inválido ou peso <= 0 |
+| `400` | Imagem inválida, operação/tipo inválido, peso <= 0 ou credenciais inválidas |
 | `401` | Token ausente/inválido/expirado |
 | `403` | Perfil sem permissão |
 | `404` | Unidade ou ponto de coleta não encontrado |
@@ -159,6 +290,17 @@ http://IP/ISAPI/Streaming/channels/101/picture
 # Dahua
 http://IP/cgi-bin/snapshot.cgi
 ```
+
+**Duas formas de usar:**
+
+1. **Endpoint portaria/balança** (`POST /portaria/eventos`, `POST /pesagens`):
+   o front envia a `camera` (URL de snapshot) no body. As credenciais são
+   globais (`.env`).
+
+2. **Endpoint de reconhecimento** (`POST /camera/reconhecer-placa`): o front
+   envia IP + credenciais no body. Útil para telas de configuração ou quando
+   o front não conhece a URL de snapshot da câmera. Ver seção
+   [Câmera — Reconhecimento de Placa (ANPR)](#câmera--reconhecimento-de-placa-anpr).
 
 - As credenciais das câmeras são globais, via variáveis de ambiente (`DVR_USER`,
   `DVR_PASSWORD`, `DVR_AUTH=digest|basic`, `DVR_TIMEOUT`).
